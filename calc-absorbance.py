@@ -11,6 +11,34 @@ import sqlite3
 from scipy import interpolate
 from math import log
 from math import exp
+import matplotlib
+import matplotlib.pyplot as plt
+from colorhash import ColorHash
+
+class Experiment():
+    x = []
+    y = []
+    binder_name = ""
+
+    def __init__(self, x, y, binder_name):
+        self.x = x
+        self.y = y
+        self.binder_name = binder_name
+
+def plot(experiments):
+    matplotlib.use("Agg")
+    f = plt.figure()
+    plt.yscale('linear')
+    plt.xscale('linear')
+
+    for e in experiments:
+        plt.plot(e.x, [i/max(e.y) for i in e.y], color=ColorHash(e.binder_name).hex, label=e.binder_name)
+        #plt.plot([exp(e) for e in x], [i/max(y) for i in y], color=ColorHash(binder_name).hex, label=binder_name)
+    
+    handles, labels = plt.gca().get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    plt.legend(by_label.values(), by_label.keys(), fontsize='xx-small')
+    f.savefig("plot.pdf", bbox_inches='tight')
 
 def calcAbsorbance(binder, experiment, percent_absorbed):
     tens_exp_id, binder, binder_name, date, initial_volume, fps = (binder[0], binder[1],
@@ -39,7 +67,8 @@ def calcAbsorbance(binder, experiment, percent_absorbed):
     interpolater = interpolate.interp1d(y, x, fill_value='extrapolate')
     abs_time = exp( interpolater(target_volume) ) # remember, x = log(time)
     print("Absorbance time at given percentage is", abs_time, file=sys.stderr)
-    return abs_time
+
+    return abs_time, Experiment([exp(e) for e in x], y, binder_name)
 
 def main():
     args = sys.argv
@@ -65,24 +94,37 @@ def main():
     # - Print the list
     # Caveats: there will be n+1 database queries
     results = []
-    c.execute('''SELECT tens_exp_id, binder, binders.name, date, volume, fps, binders.per_conc
+    processed_experiments = []
+    c.execute('''SELECT tens_exp_id, binder, binders.name, date, volume, fps, binders.per_conc,
+               binders.viscosity, binders.surface_tension, binders.smooth_ca, binders.rough_ca
                FROM tensiometer_experiments LEFT JOIN binders on
                tensiometer_experiments.binder = binders.binder_id;''') 
     for row in c:
-        tens_exp_id, binder, binder_name, date, initial_volume, fps, concentration = (row[0], row[1],
-                    row[2], row[3], row[4], row[5], row[6])
+        tens_exp_id, binder, binder_name, date, initial_volume, fps, concentration, viscosity, surface_tension, smooth_ca, rough_ca = (row[0], row[1],
+                    row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10])
+        
+        if tens_exp_id < 45 or tens_exp_id == 63:
+            continue # new data only
+        
         d.execute('''SELECT tens_exp_id, age, ca_left, ca_avg, ca_right, height,
                     bd, vol FROM tensiometer_data
                     WHERE tens_exp_id = {};'''.format(tens_exp_id)) 
         experiment = d.fetchall()
-        abs_time = calcAbsorbance(row, experiment, percent_absorbed)
+        abs_time, processed_experiment = calcAbsorbance(row, experiment, percent_absorbed)
         if abs_time == 0:
             continue
-        results.append([tens_exp_id, binder,    binder_name, binder_name[0:3], concentration, date, abs_time, initial_volume])
+        processed_experiments.append(processed_experiment)
+        results.append([tens_exp_id, binder, binder_name, binder_name[0:3], concentration, date, abs_time, initial_volume, viscosity, surface_tension, smooth_ca, rough_ca])
     # Print the column headers, then the data entries
-    print(             "tens_exp_id, binder_id, binder_name, binder_type,      concentration, date, abs_time, initial_volume")
+    print("tens_exp_id, binder_id, binder_name, binder_type, concentration, date, abs_time, initial_volume, viscosity, surface_tension, smooth_ca, rough_ca")
     for r in results:
         print(' '.join([str(e) for e in r]))
+    
+    plot(processed_experiments)
+    
+
+    if (percent_absorbed < 60):
+        print("Warning: percent _absorbed_, not percent remaining!", file=sys.stderr)
 
 
 # Main body
