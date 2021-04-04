@@ -1,6 +1,6 @@
 #!/usr/local/bin/python3.7
 """
-Import a text-file describing a tensiometer experiment into my sqlite database for experiments
+Import a text-file describing a tensiometer experiment into my sqlite database for experiments.
 """
 
 import sys
@@ -16,21 +16,21 @@ def main():
         print('usage: import-tensiometer-experiment.py /path/to/data.db /path/to/experiment.txt binderid "ISO-8601 date" initialDropVolume[ul] fps')
         sys.exit(1)
     
-    databaseFile = sys.argv[1]
-    experimentFile = sys.argv[2]
+    database_file = sys.argv[1]
+    experiment_file = sys.argv[2]
     binderID = sys.argv[3]
     exptDate = sys.argv[4]
     dropVol = sys.argv[5]
     fps = sys.argv[6]
 
-    if os.path.exists(databaseFile):
-        conn = sqlite3.connect(databaseFile)
+    if os.path.exists(database_file):
+        conn = sqlite3.connect(database_file)
         c = conn.cursor()
     else:
         print('Database file could not be found.')
         sys.exit(1)
     
-    if not os.path.exists(experimentFile):
+    if not os.path.exists(experiment_file):
         print('Experiment file not found.')
         sys.exit(1)
 
@@ -43,8 +43,8 @@ def main():
     c.execute("INSERT into tensiometer_experiments (binder,date,volume,fps) values (?, ?, ?, ?);", (binderID, exptDate, dropVol, fps))
     experimentID = c.lastrowid
 
-    # Now the tricky part, inseert the data that corresponds to the experiment
-    with open(experimentFile) as csvfile:
+    # Now the tricky part, insert the data that corresponds to the experiment
+    with open(experiment_file) as csvfile:
         csvreader = csv.reader(csvfile, delimiter='\t')
         next(csvreader) # all the files have a header row
         for row in csvreader:
