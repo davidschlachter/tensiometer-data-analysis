@@ -14,6 +14,7 @@ from math import exp
 import matplotlib
 import matplotlib.pyplot as plt
 from colorhash import ColorHash
+from exclude import exclusions
 
 class Experiment():
     absorbance_time = -1
@@ -29,7 +30,7 @@ class Experiment():
         self.experiment = experiment
     
     def calc_absorbance_time(self, target_volume):
-        print(self.experiment['fps'], self.experiment['volume'], target_volume)
+        #print(self.experiment['fps'], self.experiment['volume'], target_volume)
         target_volume = ((100 - target_volume)  / 100) * self.experiment['volume']
         pairs = [ (e[0], e[1]) for e in zip(self.x, self.y) if e[0] > 0 and e[1] > 0]
         x = [ log(e[0]) for e in pairs] # better extrapolation when time is on log scale
@@ -112,7 +113,7 @@ def main():
         tens_exp_id, binder, binder_name, date, initial_volume, fps, concentration, viscosity, surface_tension, smooth_ca, rough_ca, cca_cos_theta, temperature = (row[0], row[1],
                     row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12])
         
-        if tens_exp_id < 45 or tens_exp_id == 63:
+        if tens_exp_id < 45 or tens_exp_id in exclusions():
             continue # new data only
         
         processed_experiment = getExperiment(tens_exp_id, conn.cursor())
