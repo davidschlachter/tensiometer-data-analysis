@@ -44,20 +44,7 @@ class Experiment():
         self.absorbance_time = abs_time
         return abs_time
 
-def plot(experiments):
-    matplotlib.use("Agg")
-    f = plt.figure()
-    plt.yscale('linear')
-    plt.xscale('linear')
 
-    for e in experiments:
-        plt.plot(e.x, [i/max(e.y) for i in e.y], color=ColorHash(e.binder_name).hex, label=e.binder_name)
-        #plt.plot([exp(e) for e in x], [i/max(y) for i in y], color=ColorHash(binder_name).hex, label=binder_name)
-    
-    handles, labels = plt.gca().get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    plt.legend(by_label.values(), by_label.keys(), fontsize='xx-small')
-    f.savefig("plot.pdf", bbox_inches='tight')
 
 def getExperiment(tens_exp_id, cursor):
     cursor.execute('''SELECT tens_exp_id, age, ca_left, ca_avg, ca_right, height,
@@ -73,8 +60,7 @@ def getExperiment(tens_exp_id, cursor):
     names = [description[0] for description in cursor.description]
     binder_values = cursor.fetchone()
     binder = {n:b for n,b in zip(names, binder_values)}
-
-    print(data[0])
+    
     return Experiment(data, experiment, binder)
     
 
