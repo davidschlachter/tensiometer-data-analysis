@@ -9,9 +9,11 @@ import numpy as np
 import matplotlib.pyplot as plt 
 import sqlite3
 import scipy.stats as stats
-import calc_absorbance
+import re
 from exclude import exclusions
 from colorhash import ColorHash
+
+import calc_absorbance
 
 def short_hash(string, debug=False):
     h = str(abs(hash(string)))[0:6]
@@ -19,6 +21,106 @@ def short_hash(string, debug=False):
         print(string)
         print(h)
     return h
+
+def new_scatter_plot(xaxis, data=None, xlevels=[], sublevels=[], log=False, ylabel=None, sublevels_labels=None,
+colours=['#b36c48', '#afb59b', '#816853'], xlabel=None, tie_lines=False, filename="plot.svg", noxzero=False, errorbars=True, extrafilter=None):
+    """
+    Scatter plot showing actual values of physical properties in x-axis.
+    """
+
+    # separate out the data series
+    series = {}
+    real_data = {}
+    for d in data:
+        for x in xlevels:
+            for xx in x:
+                for s in sublevels:
+                    index = short_hash(str(x)+str(s))
+                    for ss in s:
+                        if not ss in d.binder['name'] or not xx in d.binder['name']:
+                            continue
+                        if index in series:
+                            series[index].append(d.absorbance_time)
+                            real_data[index].append(d)
+                        else:
+                            series[index] = [d.absorbance_time]
+                            real_data[index] = [d]
+    
+    xs = []; ys = []; dof = []; stdev = []
+
+    c = 0
+    for x in xlevels:
+        for s in sublevels:
+            index = short_hash(str(x)+str(s))
+            #plt.boxplot(series[index], positions=[ real_data[index][0].binder[xaxis] ], showfliers=False, notch=False)
+            plt.scatter( [ d.binder[xaxis] for d in real_data[index] ], [ d.absorbance_time for d in real_data[index] ], c=colours[c], alpha=1 )
+            
+            if extrafilter:  # e.g.  extrafilter = ['low-y', 'high-y']
+                for f in extrafilter:
+                    data_subset = [ r for r in real_data[index] if f in r.binder['name'] ]
+                    data_series = [ r.absorbance_time for r in data_subset ]
+                    data_xs = [ r.binder[xaxis] for r in data_subset ]
+                    xs.append( sum(data_xs) / len(data_xs) )
+                    ys.append( sum(data_series) / len(data_series) )
+                    dof.append( len(data_series) - 1 )
+                    stdev.append( np.std(data_series) )
+            else:
+                data_xs = [ r.binder[xaxis] for r in real_data[index] ]
+                xs.append( sum(data_xs) / len(data_xs) )
+                ys.append( sum(series[index]) / len(series[index]) )
+                dof.append( len(series[index]) - 1 )
+                stdev.append( np.std(series[index]) )
+
+            c += 1
+    
+    
+    stdev=np.array(stdev); dof=np.array(dof)
+    if errorbars:
+        plt.errorbar(xs, ys, yerr=stats.t.ppf(0.95, dof)*stdev, fmt='none', ecolor='#000000', capsize=3)
+    # add lines between the levels
+    if tie_lines:
+        trendlines = [ [] for i in xlevels ]
+        for x in xlevels:
+            for j,s in enumerate(sublevels):
+                index = short_hash(str(x)+str(s))
+                trendlines[j].append( (sum([r.binder[xaxis] for r in real_data[index]])/len([ r.binder[xaxis] for r in real_data[index]]),
+                    sum(series[index])/len(series[index]), series[index]) )
+        c = 0
+        for t in trendlines:
+            plt.plot([p[0] for p in t], [p[1] for p in t], linewidth=1, linestyle='dashed', c=colours[c])
+            if len(t) == 2:
+                ttest = stats.ttest_rel(t[0][2], t[1][2], alternative='two-sided')[1]
+                if ttest < 0.001:
+                    ttest_text = '{:0.1e}'.format(ttest)
+                else:
+                    ttest_text = '{:.3f}'.format(ttest)
+                x_position = (t[1][0] - t[0][0])/2 + t[0][0]
+                y_position = (t[1][1] - t[0][1])/2 + t[0][1] + (plt.ylim()[1] - plt.ylim()[0]) * 0.002
+                plt.text( x_position, y_position, "p = "+ttest_text, style='italic', color=colours[c], horizontalalignment='center')
+            c += 1
+
+    if ylabel != None:
+        plt.ylabel(ylabel)
+    if xlabel != None:
+        plt.xlabel(xlabel)
+    if log:
+        plt.yscale("log")
+
+    if not noxzero:
+        plt.xlim(left=0)
+
+    if sublevels_labels:
+        try:
+            labels_and_colors = sorted( [(int(re.search(r'\d+', l).group()), (int(re.search(r'\d+', l[7:]).group())), l, c) for l,c in zip(sublevels_labels, colours)] )
+        except:
+            labels_and_colors = sorted( [(int(re.search(r'\d+', l).group()), 0, l, c) for l,c in zip(sublevels_labels, colours)] )
+        for sort_key,i,l,c in labels_and_colors:
+            plt.plot([], c=c, marker='o', label=l)
+        plt.legend()
+
+    plt.savefig(filename, transparent=True)
+    plt.show()
+
 
 def mainEffectsPlot(data=None, xlevels=[], sublevels=[], xlabels=None, log=False, ylabel=None, sublevels_labels=None, colours=['#b36c48', '#afb59b', '#816853'], boxes=True):
     """
@@ -37,6 +139,8 @@ def mainEffectsPlot(data=None, xlevels=[], sublevels=[], xlabels=None, log=False
 
     inter_xlevel_spacing = 1
     inter_sublevel_spacing = 0.30
+
+    xs = []; ys = []; dof = []; stdev = []
 
     # separate out the data series
     # this started elegant, got messy fast. refactor later.
@@ -208,7 +312,8 @@ def plotAbsorptionProfiles(experiments, id=False, log=False):
     plt.show()
 
 def main():
-    conn = sqlite3.connect("/usr/home/zbox/syncthing/Synced/2021-maitrise/in-progress/data.sqlite")
+    #conn = sqlite3.connect("/usr/home/zbox/syncthing/Synced/2021-maitrise/in-progress/data.sqlite")
+    conn = sqlite3.connect("../data.sqlite")
     c = conn.cursor()
 
     experiments = []
@@ -231,13 +336,14 @@ def main():
 
     # useful for checking a particular binder
     #plotAbsorptionProfiles([e for e in experiments if 'pvp-360k-low-u-high' in e.binder['name']], id=True, log=True)
-    
+
     # Global view of all data
     #plotAbsorptionProfiles(experiments, log=True)
     #plotAbsorptionProfiles(experiments)
 
     # Colours, via https://artsexperiments.withgoogle.com/artpalette/
     pvp_40_360_colours = ['#b36c48', '#afb59b', '#816853']
+    big_pvp_40_360_colours = ['#2478af', '#d2b07f', '#0f217a', '#c88551']
     single_colour = ['#000000', '#000000', '#000000']
     lh_mw_colours = ['#454d7d', '#594540', '#c6b165']
     species_colours = ['#314435', '#9a3c34', '#455266']
@@ -246,7 +352,17 @@ def main():
     
     pvp_only = [e for e in experiments if 'pvp' in e.binder['name']]
 
-    #doeMeanPlot(pvp_only, [[['low-u'], ['high-u']], [['low-y'], ['high-y']], [['40k'], ['360k']]], ['μ', 'γ', 'MW'], ylabel="Absorption time (s)")
+    new_scatter_plot("surface_tension", data=pvp_only, xlevels=[['low-y'], ['high-y']], sublevels=[['40k'], ['360k']], xlabel="Surface tension (mN/m)",
+        log=True, ylabel="Absorption time (s)", sublevels_labels=["PVP 40k", "PVP 360k"],
+        colours=['#2478af', '#d2b07f', '#2478af', '#d2b07f'], tie_lines=True, filename="pvp-surface_tension,all.svg", noxzero=True, errorbars=True)
+
+    new_scatter_plot("viscosity", data=pvp_only, xlevels=[['low-u'], ['high-u']], sublevels=[['40k'], ['360k']], xlabel="Viscosity (Pa s)",
+        log=True, ylabel="Absorption time (s)", sublevels_labels=["PVP 40k, 21 wt-%", "PVP 360k, 4.7 wt-%", "PVP 40k, 36 wt-%", "PVP 360k, 10 wt-%"], colours=big_pvp_40_360_colours, tie_lines=True)
+
+    new_scatter_plot("per_conc", data=pvp_only, xlevels=[['low-u'], ['high-u']], sublevels=[['40k'], ['360k']], xlabel="Binder concentration (wt-%)",
+        log=True, ylabel="Absorption time (s)", sublevels_labels=["PVP 40k, 21 wt-%", "PVP 360k, 4.7 wt-%", "PVP 40k, 36 wt-%", "PVP 360k, 10 wt-%"], colours=big_pvp_40_360_colours, tie_lines=False)
+
+    doeMeanPlot(pvp_only, [[['low-u'], ['high-u']], [['low-y'], ['high-y']], [['40k'], ['360k']]], ['μ', 'γ', 'MW'], ylabel="Absorption time (s)")
     
     mainEffectsPlot(pvp_only, [['low-u'], ['high-u']], [['40k'], ['360k']], xlabels=['Low μ', 'High μ'],
         log=False, ylabel="Absorption time (s)", sublevels_labels=["PVP 40k", "PVP 360k"], colours=pvp_40_360_colours, boxes=False)
